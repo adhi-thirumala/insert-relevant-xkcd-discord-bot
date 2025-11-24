@@ -1,0 +1,9 @@
+[package]
+name = "db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libsql = "0.9.29"
+serde = "1.0.228"
+strum = { version = "0.26", features = ["derive"] }
