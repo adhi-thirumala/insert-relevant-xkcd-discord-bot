@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-libsql = "0.9.29"
+libsql = {version = "0.9.29", features = ["core"]}
 serde = "1.0.228"
 strum = { version = "0.26", features = ["derive"] }
+thiserror = "2.0.17"

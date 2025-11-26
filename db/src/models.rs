@@ -73,3 +73,21 @@ pub struct Chunks {
   pub section_type: Option<SectionType>,
   pub embedding: Vec<f32>,
 }
+
+/// Represents metadata about the database.
+///
+/// This struct contains all the information about the database, including its ID, key, and value.
+///
+///
+/// # Example
+/// ```
+/// let metadata = Metadata {
+///    key: "key".to_string(),
+///    value: "value".to_string(),
+///};
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Metadata {
+  pub key: String,
+  pub value: String,
+}
