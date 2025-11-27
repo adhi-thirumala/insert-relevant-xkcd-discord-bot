@@ -1,28 +1,27 @@
-use libsql::{Builder, Connection};
+use libsql::Builder;
 
-use crate::error::DatabaseError;
-use crate::models::Metadata;
+use crate::{
+  Database,
+  error::{DatabaseError, Result},
+};
+use std::path::Path;
 
 /// Represents a database connection.
 ///
 /// This struct contains a connection to a database.
 ///
 ///
-pub struct Database {
-  conn: Connection,
-}
-
 impl Database {
-  pub async fn init(name: Option<&str>) -> Result<Self, DatabaseError> {
-    // if file exists - return error
-    //
+  pub(crate) async fn init(path: impl AsRef<Path>) -> Result<Self> {
+    let path = path.as_ref();
+
     // check if file exists
-    if std::fs::metadata(name.unwrap_or("xkcd_discord_bot_tables.db")).is_ok() {
+    if std::fs::metadata(path).is_ok() {
       return Err(DatabaseError::InitializationError(
         "File already exists".to_string(),
       ));
     }
-    let db = Builder::new_local(name.unwrap_or("xkcd_discord_bot_tables.db"))
+    let db = Builder::new_local(path)
       .build()
       .await
       .map_err(|e| DatabaseError::LibSql(e))?;
@@ -35,8 +34,7 @@ impl Database {
     database.create_tables().await?;
     Ok(database)
   }
-
-  pub async fn create_tables(&self) -> Result<(), DatabaseError> {
+  async fn create_tables(&self) -> Result<()> {
     let query = include_str!("../migrations/001_schema.sql");
     self
       .conn

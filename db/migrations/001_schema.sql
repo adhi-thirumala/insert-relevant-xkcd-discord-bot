@@ -31,7 +31,7 @@ CREATE INDEX chunks_vec_idx ON xkcd_chunks(
 CREATE INDEX idx_comic_chunks ON xkcd_chunks(comic_number, chunk_index);
 
 CREATE TABLE metadata (
-    key TEXT NOT NULL,
+    key TEXT NOT NULL PRIMARY KEY,
     value TEXT NOT NULL
 );
 

@@ -63,6 +63,9 @@ pub enum DatabaseError {
   // Query Errors
   // ========================================================================
   /// SQL query execution failed
+  #[error("Prepared statement failed: {0}")]
+  PreparedFailed(String),
+
   #[error("Query failed: {0}")]
   QueryFailed(String),
 
@@ -73,6 +76,9 @@ pub enum DatabaseError {
   /// Vector search failed
   #[error("Vector search failed: {0}")]
   VectorSearchFailed(String),
+
+  #[error("Metadata not found for key {0}")]
+  MetadataNotFound(String),
 
   // ========================================================================
   // Serialization Errors
