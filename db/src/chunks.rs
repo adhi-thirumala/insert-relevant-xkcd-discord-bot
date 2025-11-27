@@ -58,6 +58,11 @@ impl Database {
     todo!()
   }
 
+  /// Calculate the average number of chunks per comic across all comics in the database.
+  ///
+  /// Returns 0.0 if there are no comics in the database.
+  ///
+  /// This function counts all comics, including those with zero chunks.
   pub async fn avg_chunks_per_comic(&self) -> Result<f64> {
     todo!()
   }
