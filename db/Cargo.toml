@@ -8,3 +8,6 @@ libsql = {version = "0.9.29", features = ["core"]}
 serde = "1.0.228"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0.17"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
