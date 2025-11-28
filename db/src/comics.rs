@@ -4,7 +4,18 @@ use crate::{Chunks, Database};
 use libsql::params;
 
 impl Database {
-  /// Insert a new comic into the database
+  /// Insert a new comic into the database.
+  ///
+  /// # Errors
+  /// Returns an error if:
+  /// - A comic with the same `comic_number` already exists in the database
+  /// - The database connection fails
+  ///
+  /// # Required fields
+  /// All fields in the `Comics` struct are required. Ensure that:
+  /// - `comic_number` is unique
+  /// - `title` is non-empty
+  /// - Timestamps are in the correct format
   pub async fn insert_comic(&self, comic: Comics) -> Result<()> {
     todo!()
   }
@@ -36,7 +47,9 @@ impl Database {
     todo!()
   }
 
-  /// Delete a comic (cascades to chunks via foreign key)
+  /// Delete a comic (cascades to chunks via foreign key).
+  ///
+  /// Returns an error if the comic doesn't exist.
   pub async fn delete_comic(&self, comic_number: u64) -> Result<()> {
     todo!()
   }
@@ -61,7 +74,21 @@ impl Database {
     todo!()
   }
 
-  /// Get a batch of comics by their numbers
+  /// Get a batch of comics by their numbers.
+  ///
+  /// Returns only the comics that exist in the database. Non-existent comic
+  /// numbers are silently skipped.
+  ///
+  /// The returned vector contains the found comics in ascending order of comic number,
+  /// regardless of the order of the input slice. Duplicate comic numbers in the input
+  /// are returned only once.
+  ///
+  /// # Parameters
+  /// - `comic_numbers`: Slice of comic numbers to retrieve
+  ///
+  /// # Returns
+  /// A vector of comics that were found. May be shorter than the input slice
+  /// if some comics don't exist. Returns an empty vector if no comics are found.
   pub async fn get_comics_batch(&self, comic_numbers: &[u64]) -> Result<Vec<Comics>> {
     todo!()
   }
@@ -73,8 +100,7 @@ mod tests {
   use crate::models::Comics;
 
   async fn setup() -> Database {
-    let db = Database::new(":memory:").await.unwrap();
-    db
+    Database::new(":memory:").await.unwrap()
   }
 
   fn make_comic(number: u64) -> Comics {

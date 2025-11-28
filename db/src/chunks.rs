@@ -4,15 +4,28 @@ use crate::models::SectionType;
 use libsql::params;
 use serde::{Deserialize, Serialize};
 
+/// Result of a vector similarity search operation.
+///
+/// Contains the chunk data along with metadata from the associated comic
+/// and the cosine distance from the query vector. Returned by vector search
+/// operations such as [`Database::vector_search`] and [`Database::vector_search_filtered`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkSearchResult {
+  /// The unique identifier of the chunk.
   pub chunk_id: u64,
+  /// The XKCD comic number associated with this chunk.
   pub comic_number: u64,
+  /// The text content of the chunk.
   pub chunk_text: String,
+  /// The section type of the chunk (e.g., "transcript", "explanation", etc.), if available.
   pub section_type: Option<String>,
+  /// The title of the associated XKCD comic.
   pub comic_title: String,
+  /// The URL to the XKCD comic.
   pub xkcd_url: String,
+  /// The hover text (alt text) of the comic, if available.
   pub hover_text: Option<String>,
+  /// The cosine distance between the query vector and this chunk's embedding.
   pub distance: f32,
 }
 
@@ -30,10 +43,27 @@ fn f32_blob_to_vec(blob: &[u8]) -> Vec<f32> {
 }
 
 impl Database {
+  /// Insert a single chunk into the database.
+  ///
+  /// # Errors
+  /// Returns an error if:
+  /// - The embedding dimension doesn't match EMBEDDING_DIM (768)
+  /// - The comic_number doesn't exist (foreign key constraint)
+  /// - The database operation fails
   pub async fn insert_chunk(&self, chunk: Chunks) -> Result<()> {
     todo!()
   }
 
+  /// Insert multiple chunks into the database in a batch.
+  ///
+  /// All chunks are validated before insertion. If any chunk fails validation,
+  /// none of the chunks will be inserted (atomic operation).
+  ///
+  /// # Errors
+  /// Returns an error if:
+  /// - Any chunk's embedding dimension doesn't match EMBEDDING_DIM (768)
+  /// - Any chunk's comic_number doesn't exist (foreign key constraint)
+  /// - The database operation fails
   pub async fn insert_chunks_batch(&self, chunks: &[Chunks]) -> Result<()> {
     todo!()
   }
@@ -42,6 +72,10 @@ impl Database {
     todo!()
   }
 
+  /// Delete all chunks associated with a comic.
+  ///
+  /// Returns the number of chunks that were deleted. Returns 0 if the comic
+  /// has no chunks or doesn't exist.
   pub async fn delete_chunks_for_comic(&self, comic_number: u64) -> Result<u64> {
     todo!()
   }
@@ -205,7 +239,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_vector_search_wrong_size() {
+  async fn test_vector_search_invalid_embedding_dimension() {
     let db = setup().await;
     let query = vec![0.5; 100];
     assert!(db.vector_search(&query, 10).await.is_err());
