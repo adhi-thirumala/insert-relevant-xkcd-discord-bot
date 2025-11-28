@@ -1,6 +1,6 @@
-use crate::Database;
-use crate::models::Comics;
 use crate::error::{DatabaseError, Result};
+use crate::models::Comics;
+use crate::{Chunks, Database};
 use libsql::params;
 
 impl Database {
@@ -10,7 +10,12 @@ impl Database {
   }
 
   /// Get a comic by its number
-  pub async fn get_comic(&self, comic_number: u64) -> Result<Option<Comics>> {
+  pub async fn get_comic_by_number(&self, comic_number: u64) -> Result<Option<Comics>> {
+    todo!()
+  }
+
+  /// Get a comic by its chunk
+  pub async fn get_comic_by_chunk(&self, chunk: &Chunks) -> Result<Option<Comics>> {
     todo!()
   }
 
@@ -107,7 +112,7 @@ mod tests {
     let db = setup().await;
     let comic = make_comic(42);
     db.insert_comic(comic.clone()).await.unwrap();
-    let result = db.get_comic(42).await.unwrap();
+    let result = db.get_comic_by_number(42).await.unwrap();
     assert!(result.is_some());
     assert_eq!(result.unwrap().comic_number, 42);
   }
@@ -115,7 +120,7 @@ mod tests {
   #[tokio::test]
   async fn test_get_comic_not_found() {
     let db = setup().await;
-    let result = db.get_comic(999).await.unwrap();
+    let result = db.get_comic_by_number(999).await.unwrap();
     assert!(result.is_none());
   }
 
@@ -131,16 +136,30 @@ mod tests {
   async fn test_update_comic() {
     let db = setup().await;
     db.insert_comic(make_comic(50)).await.unwrap();
-    let result = db.update_comic(50, 99999, "20250128000000".to_string(), "2025-01-28T00:00:00Z".to_string()).await;
+    let result = db
+      .update_comic(
+        50,
+        99999,
+        "20250128000000".to_string(),
+        "2025-01-28T00:00:00Z".to_string(),
+      )
+      .await;
     assert!(result.is_ok());
-    let updated = db.get_comic(50).await.unwrap().unwrap();
+    let updated = db.get_comic_by_number(50).await.unwrap().unwrap();
     assert_eq!(updated.last_revision_id, 99999);
   }
 
   #[tokio::test]
   async fn test_update_nonexistent_comic_fails() {
     let db = setup().await;
-    let result = db.update_comic(999, 12345, "20250127000000".to_string(), "2025-01-27T00:00:00Z".to_string()).await;
+    let result = db
+      .update_comic(
+        999,
+        12345,
+        "20250127000000".to_string(),
+        "2025-01-27T00:00:00Z".to_string(),
+      )
+      .await;
     assert!(result.is_err());
   }
 
