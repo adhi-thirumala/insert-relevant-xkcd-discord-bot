@@ -25,6 +25,7 @@ impl Database {
   }
 
   /// Update comic metadata when wiki is updated
+  /// Returns an error if the comic does not exist
   pub async fn update_comic(
     &self,
     comic_number: u64,
