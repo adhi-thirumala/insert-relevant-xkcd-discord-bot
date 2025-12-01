@@ -16,9 +16,7 @@ impl Database {
   /// - `comic_number` is unique
   /// - `title` is non-empty
   /// - Timestamps are in the correct format
-  pub async fn insert_comic(&self, comic: Comics) -> Result<()> {
-    todo!()
-  }
+  pub async fn insert_comic(&self, comic: Comics) -> Result<()> {}
 
   /// Get a comic by its number
   pub async fn get_comic_by_number(&self, comic_number: u64) -> Result<Option<Comics>> {

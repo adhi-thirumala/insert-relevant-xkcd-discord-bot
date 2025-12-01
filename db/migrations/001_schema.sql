@@ -17,9 +17,9 @@ CREATE TABLE xkcd_chunks (
     chunk_text TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
     section_type TEXT,              -- 'title_hover', 'explanation', 'transcript', 'trivia'
-    embedding F32_BLOB(768) NOT NULL,
+    embedding F32_BLOB(1024) NOT NULL,
 
-    FOREIGN KEY (comic_number) REFERENCES xkcd_comics(comic_number)
+    FOREIGN KEY (comic_number) REFERENCES xkcd_comics(comic_number) ON DELETE CASCADE
 );
 
 -- Vector search index

@@ -12,8 +12,8 @@ pub use chunks::ChunkSearchResult;
 pub use error::{DatabaseError, Result};
 pub use models::{Chunks, Comics, Metadata, SectionType};
 
-/// The dimension of the embedding vectors (must match F32_BLOB(768) in schema)
-pub const EMBEDDING_DIM: usize = 768;
+/// The dimension of the embedding vectors (must match F32_BLOB(1024) in schema) for qwen 0.6b
+pub const EMBEDDING_DIM: usize = 1024;
 
 pub struct Database {
   pub(crate) conn: Connection,

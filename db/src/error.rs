@@ -26,8 +26,8 @@ pub enum DatabaseError {
   InvalidComicNumber(i64),
 
   /// Invalid embedding dimension
-  #[error("Invalid embedding dimension: expected {expected}, found {found}")]
-  InvalidEmbeddingDimension { expected: usize, found: usize },
+  #[error("Invalid embedding dimension: {0}")]
+  InvalidEmbeddingDimension(String),
 
   /// Invalid chunk index (must be non-negative)
   #[error("Invalid chunk index: {0}")]
@@ -72,6 +72,10 @@ pub enum DatabaseError {
   /// Failed to parse row data
   #[error("Failed to parse row data: {0}")]
   RowParseFailed(String),
+
+  /// Transaction failed
+  #[error("Transaction failed: {0}")]
+  TransactionFailed(String),
 
   /// Vector search failed
   #[error("Vector search failed: {0}")]
