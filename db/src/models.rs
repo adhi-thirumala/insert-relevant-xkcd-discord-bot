@@ -66,7 +66,7 @@ pub enum SectionType {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunks {
-  pub id: u64,
+  pub id: Option<u64>,
   pub comic_number: u64,
   pub chunk_text: String,
   pub chunk_index: u64,
