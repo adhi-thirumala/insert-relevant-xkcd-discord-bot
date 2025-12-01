@@ -9,7 +9,7 @@ use serde_json::to_string;
 ///
 /// Contains the chunk data along with metadata from the associated comic
 /// and the cosine distance from the query vector. Returned by vector search
-/// operations such as [`Database::vector_search`] and [`Database::vector_search_filtered`].
+/// operations such as [`Database::vector_search`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkSearchResult {
   /// The unique identifier of the chunk.
