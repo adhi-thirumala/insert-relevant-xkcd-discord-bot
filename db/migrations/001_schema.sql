@@ -30,8 +30,6 @@ CREATE INDEX chunks_vec_idx ON xkcd_chunks(
 -- Fetch all chunks for a comic efficiently
 CREATE INDEX idx_comic_chunks ON xkcd_chunks(comic_number, chunk_index);
 
--- foreign key index for chunks
-CREATE INDEX idx_comic_number ON xkcd_chunks(comic_number);
 
 CREATE TABLE metadata (
     key TEXT NOT NULL PRIMARY KEY,

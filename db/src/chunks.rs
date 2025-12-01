@@ -27,7 +27,7 @@ pub struct ChunkSearchResult {
   /// The hover text (alt text) of the comic, if available.
   pub hover_text: Option<String>,
   /// The cosine distance from the query vector (lower is more similar).
-  pub distance: f32,
+  pub distance: f64,
 }
 
 // Helper functions
@@ -297,9 +297,10 @@ impl Database {
       let hover_text: Option<String> = row
         .get(6)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
-      let distance: f32 = row
+      let distance: f64 = row
         .get(7)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+
       results.push(ChunkSearchResult {
         chunk_id,
         comic_number,
