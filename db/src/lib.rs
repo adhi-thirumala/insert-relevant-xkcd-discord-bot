@@ -37,7 +37,9 @@ impl Database {
       if initialized.value == "true" {
         Ok(database)
       } else {
-        Self::init(path).await
+        Err(DatabaseError::InitializationError(
+          "Database Schema Mismatch - File exists".to_string(),
+        ))
       }
     } else {
       Self::init(path).await
