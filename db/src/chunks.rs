@@ -59,14 +59,13 @@ impl Database {
   /// - The embedding dimension doesn't match EMBEDDING_DIM (768)
   /// - The comic_number doesn't exist (foreign key constraint)
   /// - The database operation fails
-  pub async fn insert_chunk(&self, chunk: Chunks) -> Result<()> {
+  pub async fn insert_chunk(&self, chunk: Chunks) -> Result<u64> {
     validate_embedding(&chunk.embedding)?;
 
     let stmt = self
       .conn
       .prepare(
         "INSERT INTO xkcd_chunks (
-           id,
            comic_number,
            chunk_text,
            chunk_index,
@@ -85,7 +84,7 @@ impl Database {
       .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
     stmt
       .execute(params![
-        chunk.id,
+        // no comic id - its autoincrement on add
         chunk.comic_number,
         chunk.chunk_text,
         chunk.chunk_index,
@@ -94,7 +93,8 @@ impl Database {
       ])
       .await
       .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-    Ok(())
+
+    Ok(self.conn.last_insert_rowid() as u64)
   }
 
   /// Insert multiple chunks into the database in a batch.
@@ -120,7 +120,6 @@ impl Database {
     let stmt = tx
       .prepare(
         "INSERT INTO xkcd_chunks (
-       id,
        comic_number,
        chunk_text,
        chunk_index,
@@ -141,7 +140,7 @@ impl Database {
     for chunk in chunks {
       stmt
         .execute((
-          chunk.id,
+          //no id - its autoincrement
           chunk.comic_number,
           chunk.chunk_text,
           chunk.chunk_index,
@@ -208,7 +207,7 @@ impl Database {
       let embedding = f32_blob_to_vec(&embedding_blob);
 
       chunks.push(Chunks {
-        id,
+        id: Some(id),
         comic_number,
         chunk_text,
         chunk_index,
@@ -338,7 +337,7 @@ mod tests {
 
   fn make_chunk(comic: u64, idx: u64) -> Chunks {
     Chunks {
-      id: 0,
+      id: Some(0),
       comic_number: comic,
       chunk_text: format!("Chunk {}", idx),
       chunk_index: idx,
