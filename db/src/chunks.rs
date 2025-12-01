@@ -78,7 +78,6 @@ impl Database {
           ?,
           ?,
           ?,
-          ?,
           vector32(?)
           )",
       )
