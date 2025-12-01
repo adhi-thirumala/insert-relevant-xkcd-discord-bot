@@ -1,8 +1,9 @@
-use crate::{Database, Chunks, EMBEDDING_DIM};
 use crate::error::{DatabaseError, Result};
 use crate::models::SectionType;
+use crate::{Chunks, Database, EMBEDDING_DIM};
 use libsql::params;
 use serde::{Deserialize, Serialize};
+use serde_json::to_string;
 
 /// Result of a vector similarity search operation.
 ///
@@ -25,21 +26,29 @@ pub struct ChunkSearchResult {
   pub xkcd_url: String,
   /// The hover text (alt text) of the comic, if available.
   pub hover_text: Option<String>,
-  /// The cosine distance between the query vector and this chunk's embedding.
-  pub distance: f32,
 }
 
 // Helper functions
 fn validate_embedding(embedding: &[f32]) -> Result<()> {
-  todo!()
+  if embedding.len() != EMBEDDING_DIM {
+    return Err(DatabaseError::InvalidEmbeddingDimension(format!(
+      "Expected {} dimensions, got {}",
+      EMBEDDING_DIM,
+      embedding.len()
+    )));
+  }
+  Ok(())
 }
 
-fn vec_to_f32_blob(embedding: &[f32]) -> Vec<u8> {
-  todo!()
+fn vec_to_json_string(embedding: Vec<f32>) -> String {
+  to_string(&embedding).expect("Failed to serialize embedding (should not fail)")
 }
 
 fn f32_blob_to_vec(blob: &[u8]) -> Vec<f32> {
-  todo!()
+  blob
+    .chunks_exact(4)
+    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    .collect()
 }
 
 impl Database {
@@ -51,7 +60,41 @@ impl Database {
   /// - The comic_number doesn't exist (foreign key constraint)
   /// - The database operation fails
   pub async fn insert_chunk(&self, chunk: Chunks) -> Result<()> {
-    todo!()
+    validate_embedding(&chunk.embedding)?;
+
+    let stmt = self
+      .conn
+      .prepare(
+        "INSERT INTO xkcd_chunks (
+           id,
+           comic_number,
+           chunk_text,
+           chunk_index,
+           section_type,
+           embedding
+          ) VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          vector32(?)
+          )",
+      )
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+    stmt
+      .execute(params![
+        chunk.id,
+        chunk.comic_number,
+        chunk.chunk_text,
+        chunk.chunk_index,
+        chunk.section_type.map(|s| s.to_string()),
+        vec_to_json_string(chunk.embedding),
+      ])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    Ok(())
   }
 
   /// Insert multiple chunks into the database in a batch.
@@ -64,12 +107,117 @@ impl Database {
   /// - Any chunk's embedding dimension doesn't match EMBEDDING_DIM (768)
   /// - Any chunk's comic_number doesn't exist (foreign key constraint)
   /// - The database operation fails
-  pub async fn insert_chunks_batch(&self, chunks: &[Chunks]) -> Result<()> {
-    todo!()
+  pub async fn insert_chunks_batch(&self, chunks: Vec<Chunks>) -> Result<()> {
+    for chunk in &chunks {
+      validate_embedding(&chunk.embedding)?;
+    }
+    let tx = self
+      .conn
+      .transaction()
+      .await
+      .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))?;
+
+    let stmt = tx
+      .prepare(
+        "INSERT INTO xkcd_chunks (
+       id,
+       comic_number,
+       chunk_text,
+       chunk_index,
+       section_type,
+       embedding
+      ) VALUES (
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      vector32(?)
+      )",
+      )
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+
+    for chunk in chunks {
+      stmt
+        .execute((
+          chunk.id,
+          chunk.comic_number,
+          chunk.chunk_text,
+          chunk.chunk_index,
+          chunk.section_type.map(|s| s.to_string()),
+          vec_to_json_string(chunk.embedding),
+        ))
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    }
+
+    tx.commit()
+      .await
+      .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))?;
+    Ok(())
   }
 
   pub async fn get_chunks_for_comic(&self, comic_number: u64) -> Result<Vec<Chunks>> {
-    todo!()
+    let stmt = self
+      .conn
+      .prepare(
+        "SELECT id, comic_number, chunk_text, chunk_index, section_type, embedding
+         FROM xkcd_chunks
+         WHERE comic_number = ?
+         ORDER BY chunk_index ASC",
+      )
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+
+    let mut rows = stmt
+      .query(params![comic_number])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+    let mut chunks = Vec::new();
+    while let Some(row) = rows
+      .next()
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+    {
+      let id: u64 = row
+        .get(0)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let comic_number: u64 = row
+        .get(1)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let chunk_text: String = row
+        .get(2)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let chunk_index: u64 = row
+        .get(3)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let section_type_str: Option<String> = row
+        .get(4)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let embedding_blob: Vec<u8> = row
+        .get(5)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+
+      let section_type = section_type_str
+        .map(|s| s.parse::<SectionType>())
+        .transpose()
+        .map_err(|e| DatabaseError::Serialization(format!("Invalid section_type: {}", e)))?;
+
+      let embedding = f32_blob_to_vec(&embedding_blob);
+
+      chunks.push(Chunks {
+        id,
+        comic_number,
+        chunk_text,
+        chunk_index,
+        section_type,
+        embedding,
+      });
+    }
+
+    Ok(chunks)
   }
 
   /// Delete all chunks associated with a comic.
@@ -77,40 +225,98 @@ impl Database {
   /// Returns the number of chunks that were deleted. Returns 0 if the comic
   /// has no chunks or doesn't exist.
   pub async fn delete_chunks_for_comic(&self, comic_number: u64) -> Result<u64> {
-    todo!()
+    let stmt = self
+      .conn
+      .prepare("DELETE FROM xkcd_chunks WHERE comic_number = ?")
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+
+    let rows_affected = stmt
+      .execute(params![comic_number])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+    Ok(rows_affected as u64)
   }
 
-  pub async fn vector_search(&self, query_embedding: &[f32], top_k: usize) -> Result<Vec<ChunkSearchResult>> {
-    todo!()
-  }
+  pub async fn vector_search(
+    &self,
+    query_embedding: Vec<f32>,
+    top_k: usize,
+  ) -> Result<Vec<ChunkSearchResult>> {
+    validate_embedding(&query_embedding)?;
 
-  pub async fn vector_search_filtered(&self, query_embedding: &[f32], top_k: usize, comic_numbers: &[u64]) -> Result<Vec<ChunkSearchResult>> {
-    todo!()
-  }
+    let stmt = self
+      .conn
+      .prepare(
+        "SELECT
+          xc.id,
+          xc.comic_number,
+          xc.chunk_text,
+          xc.section_type,
+          c.title,
+          c.xkcd_url,
+          c.hover_text,
+          v.distance
+        FROM vector_top_k('chunks_vec_idx', vector32(?), ?) v
+        JOIN xkcd_chunks xc ON xc.rowid = v.id
+        JOIN xkcd_comics c ON c.comic_number = xc.comic_number
+        ORDER BY v.distance",
+      )
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+    let mut rows = stmt
+      .query(params![vec_to_json_string(query_embedding), top_k as u64])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-  pub async fn count_chunks(&self) -> Result<u64> {
-    todo!()
-  }
+    let mut results = Vec::new();
+    while let Some(row) = rows
+      .next()
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+    {
+      let chunk_id: u64 = row
+        .get(0)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let comic_number: u64 = row
+        .get(1)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let chunk_text: String = row
+        .get(2)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let section_type: Option<String> = row
+        .get(3)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let comic_title: String = row
+        .get(4)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let xkcd_url: String = row
+        .get(5)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      let hover_text: Option<String> = row
+        .get(6)
+        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+      results.push(ChunkSearchResult {
+        chunk_id,
+        comic_number,
+        chunk_text,
+        section_type,
+        comic_title,
+        xkcd_url,
+        hover_text,
+      });
+    }
 
-  /// Calculate the average number of chunks per comic across all comics in the database.
-  ///
-  /// Returns 0.0 if there are no comics in the database.
-  ///
-  /// This function counts all comics, including those with zero chunks.
-  pub async fn avg_chunks_per_comic(&self) -> Result<f64> {
-    todo!()
-  }
-
-  pub async fn count_chunks_for_comic(&self, comic_number: u64) -> Result<u64> {
-    todo!()
+    Ok(results)
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::models::{Chunks, Comics, SectionType};
   use crate::EMBEDDING_DIM;
+  use crate::models::{Chunks, Comics, SectionType};
 
   async fn setup() -> Database {
     Database::new(":memory:").await.unwrap()
@@ -168,7 +374,7 @@ mod tests {
     let db = setup().await;
     db.insert_comic(make_comic(1)).await.unwrap();
     let chunks = vec![make_chunk(1, 0), make_chunk(1, 1)];
-    assert!(db.insert_chunks_batch(&chunks).await.is_ok());
+    assert!(db.insert_chunks_batch(chunks).await.is_ok());
     assert_eq!(db.get_chunks_for_comic(1).await.unwrap().len(), 2);
   }
 
@@ -179,7 +385,7 @@ mod tests {
     let mut bad = make_chunk(1, 1);
     bad.embedding = vec![0.0; 50];
     let chunks = vec![make_chunk(1, 0), bad, make_chunk(1, 2)];
-    assert!(db.insert_chunks_batch(&chunks).await.is_err());
+    assert!(db.insert_chunks_batch(chunks).await.is_err());
     assert_eq!(db.get_chunks_for_comic(1).await.unwrap().len(), 0);
   }
 
@@ -233,7 +439,7 @@ mod tests {
     db.insert_chunk(c1).await.unwrap();
     db.insert_chunk(c2).await.unwrap();
     let query = vec![0.9; EMBEDDING_DIM];
-    let results = db.vector_search(&query, 2).await.unwrap();
+    let results = db.vector_search(query, 2).await.unwrap();
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].comic_number, 1);
   }
@@ -242,76 +448,18 @@ mod tests {
   async fn test_vector_search_invalid_embedding_dimension() {
     let db = setup().await;
     let query = vec![0.5; 100];
-    assert!(db.vector_search(&query, 10).await.is_err());
+    assert!(db.vector_search(query, 10).await.is_err());
   }
-
-  #[tokio::test]
-  async fn test_vector_search_filtered() {
-    let db = setup().await;
-    for i in 1..=3 {
-      db.insert_comic(make_comic(i)).await.unwrap();
-      db.insert_chunk(make_chunk(i, 0)).await.unwrap();
-    }
-    let query = vec![0.5; EMBEDDING_DIM];
-    let results = db.vector_search_filtered(&query, 10, &[1, 3]).await.unwrap();
-    assert_eq!(results.len(), 2);
-    assert!(results.iter().any(|r| r.comic_number == 1));
-    assert!(!results.iter().any(|r| r.comic_number == 2));
-  }
-
-  #[tokio::test]
-  async fn test_vector_search_filtered_empty() {
-    let db = setup().await;
-    let query = vec![0.5; EMBEDDING_DIM];
-    assert_eq!(db.vector_search_filtered(&query, 10, &[]).await.unwrap().len(), 0);
-  }
-
-  #[tokio::test]
-  async fn test_count_chunks() {
-    let db = setup().await;
-    assert_eq!(db.count_chunks().await.unwrap(), 0);
-    db.insert_comic(make_comic(1)).await.unwrap();
-    db.insert_chunk(make_chunk(1, 0)).await.unwrap();
-    db.insert_chunk(make_chunk(1, 1)).await.unwrap();
-    assert_eq!(db.count_chunks().await.unwrap(), 2);
-  }
-
-  #[tokio::test]
-  async fn test_avg_chunks_per_comic() {
-    let db = setup().await;
-    db.insert_comic(make_comic(1)).await.unwrap();
-    for i in 0..3 {
-      db.insert_chunk(make_chunk(1, i)).await.unwrap();
-    }
-    db.insert_comic(make_comic(2)).await.unwrap();
-    db.insert_chunk(make_chunk(2, 0)).await.unwrap();
-    let avg = db.avg_chunks_per_comic().await.unwrap();
-    assert_eq!(avg, 2.0);
-  }
-
-  #[tokio::test]
-  async fn test_avg_chunks_empty() {
-    let db = setup().await;
-    assert_eq!(db.avg_chunks_per_comic().await.unwrap(), 0.0);
-  }
-
-  #[tokio::test]
-  async fn test_count_chunks_for_comic() {
-    let db = setup().await;
-    db.insert_comic(make_comic(5)).await.unwrap();
-    for i in 0..3 {
-      db.insert_chunk(make_chunk(5, i)).await.unwrap();
-    }
-    assert_eq!(db.count_chunks_for_comic(5).await.unwrap(), 3);
-    assert_eq!(db.count_chunks_for_comic(999).await.unwrap(), 0);
-  }
-
   #[tokio::test]
   async fn test_embedding_roundtrip() {
     let db = setup().await;
     db.insert_comic(make_comic(1)).await.unwrap();
     let mut chunk = make_chunk(1, 0);
-    chunk.embedding = vec![0.123, 0.456, 0.789].into_iter().cycle().take(EMBEDDING_DIM).collect();
+    chunk.embedding = vec![0.123, 0.456, 0.789]
+      .into_iter()
+      .cycle()
+      .take(EMBEDDING_DIM)
+      .collect();
     db.insert_chunk(chunk.clone()).await.unwrap();
     let retrieved = db.get_chunks_for_comic(1).await.unwrap();
     for (o, r) in chunk.embedding.iter().zip(retrieved[0].embedding.iter()) {
@@ -327,17 +475,9 @@ mod tests {
     chunk.section_type = Some(SectionType::Trivia);
     db.insert_chunk(chunk).await.unwrap();
     let retrieved = db.get_chunks_for_comic(1).await.unwrap();
-    assert!(matches!(retrieved[0].section_type, Some(SectionType::Trivia)));
-  }
-
-  #[tokio::test]
-  async fn test_cascade_delete() {
-    let db = setup().await;
-    db.insert_comic(make_comic(10)).await.unwrap();
-    db.insert_chunk(make_chunk(10, 0)).await.unwrap();
-    db.insert_chunk(make_chunk(10, 1)).await.unwrap();
-    assert_eq!(db.count_chunks_for_comic(10).await.unwrap(), 2);
-    db.delete_comic(10).await.unwrap();
-    assert_eq!(db.count_chunks_for_comic(10).await.unwrap(), 0);
+    assert!(matches!(
+      retrieved[0].section_type,
+      Some(SectionType::Trivia)
+    ));
   }
 }

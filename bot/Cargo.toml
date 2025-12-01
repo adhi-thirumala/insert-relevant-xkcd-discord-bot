@@ -7,3 +7,4 @@ edition = "2024"
 config = "0.15.19"
 dotenvy = "0.15.7"
 secrecy = "0.10.3"
+db = {path = "../db"}

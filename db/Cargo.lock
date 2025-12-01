@@ -346,6 +346,7 @@ version = "0.1.0"
 dependencies = [
  "libsql",
  "serde",
+ "serde_json",
  "strum",
  "thiserror 2.0.17",
  "tokio",
