@@ -147,7 +147,7 @@ impl Database {
       .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
     if rows_affected == 0 {
-      Err(DatabaseError::InvalidComicNumber(comic_number as i64))
+      Err(DatabaseError::InvalidComicNumber(comic_number))
     } else {
       Ok(())
     }
@@ -168,7 +168,7 @@ impl Database {
       .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
     if rows_affected == 0 {
-      Err(DatabaseError::InvalidComicNumber(comic_number as i64))
+      Err(DatabaseError::InvalidComicNumber(comic_number))
     } else {
       Ok(())
     }
