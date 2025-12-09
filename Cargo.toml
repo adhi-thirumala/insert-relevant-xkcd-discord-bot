@@ -1,0 +1,35 @@
+[workspace]
+members = ["bot", "db", "web-scraper"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# Serialization
+serde = "1.0.228"
+serde_json = "1.0.145"
+
+# Error handling
+thiserror = "2.0.17"
+
+# Async runtime
+tokio = { version = "1", features = ["rt", "macros"] }
+
+# Database
+libsql = { version = "0.9.29", features = ["core"] }
+
+# Bot dependencies
+config = "0.15.19"
+dotenvy = "0.15.7"
+secrecy = "0.10.3"
+
+# Utilities
+strum = { version = "0.26", features = ["derive"] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }

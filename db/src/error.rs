@@ -84,6 +84,9 @@ pub enum DatabaseError {
   #[error("Metadata not found for key {0}")]
   MetadataNotFound(String),
 
+  #[error("Failed to parse metadata value: {0}")]
+  MetaParseFailed(String),
+
   // ========================================================================
   // Serialization Errors
   // ========================================================================

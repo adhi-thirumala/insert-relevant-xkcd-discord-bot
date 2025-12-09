@@ -10,6 +10,9 @@ CREATE TABLE xkcd_comics (
     updated_at TEXT NOT NULL                      -- When you last updated it
 );
 
+CREATE INDEX idx_updated_at ON xkcd_comics(updated_at);
+
+
 -- Semantic chunks with embeddings
 CREATE TABLE xkcd_chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
