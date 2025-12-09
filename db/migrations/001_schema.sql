@@ -1,3 +1,5 @@
+PRAGMA journal_mode = WAL;
+
 CREATE TABLE xkcd_comics (
     comic_number INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
