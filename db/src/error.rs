@@ -105,6 +105,9 @@ pub enum DatabaseError {
   #[error("File system error: {0}")]
   IoError(#[from] std::io::Error),
 
+  #[error("No Comics Found")]
+  NoComicsFound,
+
   // ========================================================================
   // Underlying Library Errors
   // ========================================================================

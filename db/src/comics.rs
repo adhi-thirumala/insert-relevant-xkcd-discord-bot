@@ -75,22 +75,6 @@ impl Database {
       .await
       .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-    match self.get_max_comic_number().await {
-      Ok(max_number) => {
-        if comic.comic_number > max_number {
-          self
-            .set_metadata("BIGGEST", comic.comic_number.to_string())
-            .await?;
-        }
-      }
-      Err(DatabaseError::MetadataNotFound(_)) => {
-        self
-          .set_metadata("BIGGEST", comic.comic_number.to_string())
-          .await?;
-      }
-      Err(e) => return Err(e),
-    }
-
     Ok(())
   }
 
@@ -176,12 +160,20 @@ impl Database {
 
   /// Get the highest comic number in database
   pub async fn get_max_comic_number(&self) -> Result<u64> {
-    self.get_metadata("BIGGEST").await.map(|metadata| {
-      metadata
-        .value
-        .parse::<u64>()
-        .map_err(|e| DatabaseError::MetaParseFailed(e.to_string()))
-    })?
+    let mut stmt = self
+      .conn
+      .prepare("SELECT MAX(comic_number) FROM xkcd_comics")
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+    let row = stmt
+      .query_row(params![])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    match row.get(0) {
+      Ok(Some(max_comic_number)) => Ok(max_comic_number),
+      Ok(None) => Err(DatabaseError::NoComicsFound),
+      Err(e) => Err(DatabaseError::RowParseFailed(e.to_string())),
+    }
   }
 
   /// Get comics that haven't been updated recently (for update checks)
@@ -347,7 +339,7 @@ mod tests {
     assert!(
       db.get_max_comic_number()
         .await
-        .is_err_and(|e| matches!(e, DatabaseError::MetadataNotFound(_)))
+        .is_err_and(|e| matches!(e, DatabaseError::NoComicsFound))
     );
   }
 
