@@ -137,16 +137,17 @@ impl Database {
 
     for chunk in chunks {
       stmt
-        .execute((
-          //no id - its autoincrement
+        .execute(params![
           chunk.comic_number,
           chunk.chunk_text,
           chunk.chunk_index,
           chunk.section_type.map(|s| s.to_string()),
           vec_to_json_string(chunk.embedding),
-        ))
+        ])
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+      stmt.reset();
     }
 
     tx.commit()
@@ -383,6 +384,28 @@ mod tests {
     bad.embedding = vec![0.0; 50];
     let chunks = vec![make_chunk(1, 0), bad, make_chunk(1, 2)];
     assert!(db.insert_chunks_batch(chunks).await.is_err());
+    assert_eq!(db.get_chunks_for_comic(1).await.unwrap().len(), 0);
+  }
+
+  #[tokio::test]
+  async fn test_insert_chunks_batch_rollback_on_foreign_key_violation() {
+    let db = setup().await;
+
+    // Insert one comic
+    db.insert_comic(make_comic(1)).await.unwrap();
+
+    // Create batch with valid and invalid chunks
+    let chunks = vec![
+      make_chunk(1, 0),   // Valid - comic 1 exists
+      make_chunk(999, 0), // Invalid - comic 999 doesn't exist
+    ];
+
+    // Batch insert should fail due to foreign key violation
+    let result = db.insert_chunks_batch(chunks).await;
+    assert!(result.is_err());
+
+    // Verify rollback: comic 1 should have ZERO chunks
+    // (the first chunk should have been rolled back)
     assert_eq!(db.get_chunks_for_comic(1).await.unwrap().len(), 0);
   }
 

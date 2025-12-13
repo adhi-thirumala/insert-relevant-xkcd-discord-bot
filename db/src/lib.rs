@@ -32,6 +32,13 @@ impl Database {
       let conn = db
         .connect()
         .map_err(|e| DatabaseError::Connection(e.to_string()))?;
+
+      // Enable foreign key constraints (must be done per-connection)
+      conn
+        .execute("PRAGMA foreign_keys = ON", ())
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
       let database = Database { conn };
       let initialized: Metadata = database.get_metadata("INITIALIZED").await?;
       if initialized.value == "true" {

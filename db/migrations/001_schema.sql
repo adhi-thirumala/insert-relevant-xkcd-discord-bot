@@ -1,4 +1,5 @@
 PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
 
 CREATE TABLE xkcd_comics (
     comic_number INTEGER PRIMARY KEY,
