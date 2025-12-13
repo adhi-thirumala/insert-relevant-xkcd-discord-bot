@@ -1,3 +1,6 @@
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
 CREATE TABLE xkcd_comics (
     comic_number INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
@@ -9,6 +12,9 @@ CREATE TABLE xkcd_comics (
     scraped_at TEXT NOT NULL,                    -- When you first scraped it
     updated_at TEXT NOT NULL                      -- When you last updated it
 );
+
+CREATE INDEX idx_updated_at ON xkcd_comics(updated_at);
+
 
 -- Semantic chunks with embeddings
 CREATE TABLE xkcd_chunks (
@@ -30,8 +36,6 @@ CREATE INDEX chunks_vec_idx ON xkcd_chunks(
 -- Fetch all chunks for a comic efficiently
 CREATE INDEX idx_comic_chunks ON xkcd_chunks(comic_number, chunk_index);
 
--- foreign key index for chunks
-CREATE INDEX idx_comic_number ON xkcd_chunks(comic_number);
 
 CREATE TABLE metadata (
     key TEXT NOT NULL PRIMARY KEY,

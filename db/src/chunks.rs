@@ -7,9 +7,9 @@ use serde_json::to_string;
 
 /// Result of a vector similarity search operation.
 ///
-/// Contains the chunk data along with metadata from the associated comic
-/// and the cosine distance from the query vector. Returned by vector search
-/// operations such as [`Database::vector_search`]
+/// Contains the chunk data along with metadata from the associated comic.
+/// Results are ordered by similarity (most similar first) via the vector index.
+/// Returned by vector search operations such as [`Database::vector_search`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkSearchResult {
   /// The unique identifier of the chunk.
@@ -26,8 +26,6 @@ pub struct ChunkSearchResult {
   pub xkcd_url: String,
   /// The hover text (alt text) of the comic, if available.
   pub hover_text: Option<String>,
-  /// The cosine distance from the query vector (lower is more similar).
-  pub distance: f32,
 }
 
 // Helper functions
@@ -42,7 +40,7 @@ fn validate_embedding(embedding: &[f32]) -> Result<()> {
   Ok(())
 }
 
-fn vec_to_json_string(embedding: Vec<f32>) -> String {
+pub(crate) fn vec_to_json_string(embedding: Vec<impl Serialize>) -> String {
   to_string(&embedding).expect("Failed to serialize embedding (should not fail)")
 }
 
@@ -131,7 +129,6 @@ impl Database {
       ?,
       ?,
       ?,
-      ?,
       vector32(?)
       )",
       )
@@ -140,16 +137,17 @@ impl Database {
 
     for chunk in chunks {
       stmt
-        .execute((
-          //no id - its autoincrement
+        .execute(params![
           chunk.comic_number,
           chunk.chunk_text,
           chunk.chunk_index,
           chunk.section_type.map(|s| s.to_string()),
           vec_to_json_string(chunk.embedding),
-        ))
+        ])
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+      stmt.reset();
     }
 
     tx.commit()
@@ -246,6 +244,7 @@ impl Database {
   ) -> Result<Vec<ChunkSearchResult>> {
     validate_embedding(&query_embedding)?;
 
+    let query_vec_json = vec_to_json_string(query_embedding);
     let stmt = self
       .conn
       .prepare(
@@ -256,17 +255,15 @@ impl Database {
           xc.section_type,
           c.title,
           c.xkcd_url,
-          c.hover_text,
-          v.distance
+          c.hover_text
         FROM vector_top_k('chunks_vec_idx', vector32(?), ?) v
         JOIN xkcd_chunks xc ON xc.rowid = v.id
-        JOIN xkcd_comics c ON c.comic_number = xc.comic_number
-        ORDER BY v.distance",
+        JOIN xkcd_comics c ON c.comic_number = xc.comic_number",
       )
       .await
       .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
     let mut rows = stmt
-      .query(params![vec_to_json_string(query_embedding), top_k as u64])
+      .query(params![query_vec_json, top_k as u64])
       .await
       .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
@@ -297,9 +294,7 @@ impl Database {
       let hover_text: Option<String> = row
         .get(6)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
-      let distance: f32 = row
-        .get(7)
-        .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+
       results.push(ChunkSearchResult {
         chunk_id,
         comic_number,
@@ -308,7 +303,6 @@ impl Database {
         comic_title,
         xkcd_url,
         hover_text,
-        distance,
       });
     }
 
@@ -394,6 +388,28 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn test_insert_chunks_batch_rollback_on_foreign_key_violation() {
+    let db = setup().await;
+
+    // Insert one comic
+    db.insert_comic(make_comic(1)).await.unwrap();
+
+    // Create batch with valid and invalid chunks
+    let chunks = vec![
+      make_chunk(1, 0),   // Valid - comic 1 exists
+      make_chunk(999, 0), // Invalid - comic 999 doesn't exist
+    ];
+
+    // Batch insert should fail due to foreign key violation
+    let result = db.insert_chunks_batch(chunks).await;
+    assert!(result.is_err());
+
+    // Verify rollback: comic 1 should have ZERO chunks
+    // (the first chunk should have been rolled back)
+    assert_eq!(db.get_chunks_for_comic(1).await.unwrap().len(), 0);
+  }
+
+  #[tokio::test]
   async fn test_get_chunks_for_comic() {
     let db = setup().await;
     db.insert_comic(make_comic(42)).await.unwrap();
@@ -445,7 +461,10 @@ mod tests {
     let query = vec![0.9; EMBEDDING_DIM];
     let results = db.vector_search(query, 2).await.unwrap();
     assert_eq!(results.len(), 2);
-    assert_eq!(results[0].comic_number, 1);
+    // vector_top_k returns top K results, ordering depends on index implementation
+    let comic_numbers: Vec<u64> = results.iter().map(|r| r.comic_number).collect();
+    assert!(comic_numbers.contains(&1));
+    assert!(comic_numbers.contains(&2));
   }
 
   #[tokio::test]

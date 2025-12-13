@@ -1,6 +1,22 @@
+use chrono::{DateTime, Utc};
+use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use libsql::{Rows, de, params};
+
 use crate::error::Result;
 use crate::models::Comics;
-use crate::{Chunks, Database};
+use crate::{Database, DatabaseError, chunks};
+
+async fn into_comic_vec(rows: Rows) -> Result<Vec<Comics>> {
+  rows
+    .into_stream()
+    .map(|res| res.map_err(|e| DatabaseError::QueryFailed(e.to_string())))
+    .and_then(|row| async move {
+      de::from_row::<Comics>(&row).map_err(|e| DatabaseError::Serialization(e.to_string()))
+    })
+    .try_collect()
+    .map_err(|e| DatabaseError::Serialization(e.to_string()))
+    .await
+}
 
 impl Database {
   /// Insert a new comic into the database.
@@ -16,22 +32,75 @@ impl Database {
   /// - `title` is non-empty
   /// - Timestamps are in the correct format
   pub async fn insert_comic(&self, comic: Comics) -> Result<()> {
-    todo!()
+    let stmt = self
+      .conn
+      .prepare(
+        "INSERT INTO xkcd_comics (
+          comic_number,
+          title,
+          url,
+          xkcd_url,
+          hover_text,
+          last_revision_id,
+          last_revision_timestamp,
+          scraped_at,
+          updated_at
+          ) VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?
+          )",
+      )
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+
+    stmt
+      .execute(params![
+        comic.comic_number,
+        comic.title,
+        comic.url,
+        comic.xkcd_url,
+        comic.hover_text,
+        comic.last_revision_id,
+        comic.last_revision_timestamp,
+        comic.scraped_at,
+        comic.updated_at,
+      ])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+    Ok(())
   }
 
   /// Get a comic by its number
   pub async fn get_comic_by_number(&self, comic_number: u64) -> Result<Option<Comics>> {
-    todo!()
-  }
+    let mut stmt = self
+      .conn
+      .prepare("SELECT * FROM xkcd_comics WHERE comic_number = ?")
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
 
-  /// Get a comic by its chunk
-  pub async fn get_comic_by_chunk(&self, chunk: &Chunks) -> Result<Option<Comics>> {
-    todo!()
+    match stmt.query_row(params![comic_number]).await {
+      Ok(row) => Ok(Some(
+        de::from_row::<Comics>(&row).map_err(|e| DatabaseError::Serialization(e.to_string()))?,
+      )),
+      Err(libsql::Error::QueryReturnedNoRows) => Ok(None),
+      Err(e) => Err(DatabaseError::QueryFailed(e.to_string())),
+    }
   }
 
   /// Check if a comic exists
   pub async fn comic_exists(&self, comic_number: u64) -> Result<bool> {
-    todo!()
+    self
+      .get_comic_by_number(comic_number)
+      .await
+      .map(|comic| comic.is_some())
   }
 
   /// Update comic metadata when wiki is updated
@@ -43,34 +112,84 @@ impl Database {
     last_revision_timestamp: String,
     updated_at: String,
   ) -> Result<()> {
-    todo!()
+    let stmt = self
+      .conn
+      .prepare(
+        "UPDATE xkcd_comics SET last_revision_id = ?, last_revision_timestamp = ?, updated_at = ? WHERE comic_number = ?"
+      )
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+
+    let rows_affected = stmt
+      .execute(params![
+        last_revision_id,
+        last_revision_timestamp,
+        updated_at,
+        comic_number
+      ])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+    if rows_affected == 0 {
+      Err(DatabaseError::InvalidComicNumber(comic_number))
+    } else {
+      Ok(())
+    }
   }
 
   /// Delete a comic (cascades to chunks via foreign key).
   ///
   /// Returns an error if the comic doesn't exist.
   pub async fn delete_comic(&self, comic_number: u64) -> Result<()> {
-    todo!()
+    let stmt = self
+      .conn
+      .prepare("DELETE FROM xkcd_comics WHERE comic_number = ?")
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+    let rows_affected = stmt
+      .execute(params![comic_number])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+    if rows_affected == 0 {
+      Err(DatabaseError::InvalidComicNumber(comic_number))
+    } else {
+      Ok(())
+    }
   }
 
   /// Get the highest comic number in database
-  pub async fn get_max_comic_number(&self) -> Result<Option<u64>> {
-    todo!()
-  }
-
-  /// Count total comics
-  pub async fn count_comics(&self) -> Result<u64> {
-    todo!()
-  }
-
-  /// Get all comic numbers (for update checking)
-  pub async fn get_all_comic_numbers(&self) -> Result<Vec<u64>> {
-    todo!()
+  pub async fn get_max_comic_number(&self) -> Result<u64> {
+    let mut stmt = self
+      .conn
+      .prepare("SELECT MAX(comic_number) FROM xkcd_comics")
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+    let row = stmt
+      .query_row(params![])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    match row.get(0) {
+      Ok(Some(max_comic_number)) => Ok(max_comic_number),
+      Ok(None) => Err(DatabaseError::NoComicsFound),
+      Err(e) => Err(DatabaseError::RowParseFailed(e.to_string())),
+    }
   }
 
   /// Get comics that haven't been updated recently (for update checks)
-  pub async fn get_comics_needing_update(&self, older_than_days: u64) -> Result<Vec<Comics>> {
-    todo!()
+  pub async fn get_comics_needing_update(&self, older_than: DateTime<Utc>) -> Result<Vec<Comics>> {
+    let stmt = self
+      .conn
+      .prepare("SELECT * FROM xkcd_comics WHERE updated_at < ?")
+      .await
+      .map_err(|e| DatabaseError::PreparedFailed(e.to_string()))?;
+
+    let rows = stmt
+      .query(params![older_than.to_rfc3339()])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+    into_comic_vec(rows).await
   }
 
   /// Get a batch of comics by their numbers.
@@ -88,8 +207,17 @@ impl Database {
   /// # Returns
   /// A vector of comics that were found. May be shorter than the input slice
   /// if some comics don't exist. Returns an empty vector if no comics are found.
-  pub async fn get_comics_batch(&self, comic_numbers: &[u64]) -> Result<Vec<Comics>> {
-    todo!()
+  pub async fn get_comics_batch(&self, comic_numbers: Vec<u64>) -> Result<Vec<Comics>> {
+    let stmt = self
+      .conn
+      .prepare("SELECT * FROM xkcd_comics WHERE comic_number IN (SELECT value FROM json_each(?))")
+      .await?;
+
+    let rows = stmt
+      .query(params![chunks::vec_to_json_string(comic_numbers)])
+      .await
+      .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    into_comic_vec(rows).await
   }
 }
 
@@ -208,7 +336,11 @@ mod tests {
   #[tokio::test]
   async fn test_get_max_comic_number_empty_db() {
     let db = setup().await;
-    assert!(db.get_max_comic_number().await.unwrap().is_none());
+    assert!(
+      db.get_max_comic_number()
+        .await
+        .is_err_and(|e| matches!(e, DatabaseError::NoComicsFound))
+    );
   }
 
   #[tokio::test]
@@ -217,26 +349,7 @@ mod tests {
     db.insert_comic(make_comic(5)).await.unwrap();
     db.insert_comic(make_comic(100)).await.unwrap();
     db.insert_comic(make_comic(42)).await.unwrap();
-    assert_eq!(db.get_max_comic_number().await.unwrap(), Some(100));
-  }
-
-  #[tokio::test]
-  async fn test_count_comics() {
-    let db = setup().await;
-    assert_eq!(db.count_comics().await.unwrap(), 0);
-    db.insert_comic(make_comic(1)).await.unwrap();
-    db.insert_comic(make_comic(2)).await.unwrap();
-    assert_eq!(db.count_comics().await.unwrap(), 2);
-  }
-
-  #[tokio::test]
-  async fn test_get_all_comic_numbers() {
-    let db = setup().await;
-    db.insert_comic(make_comic(50)).await.unwrap();
-    db.insert_comic(make_comic(10)).await.unwrap();
-    db.insert_comic(make_comic(30)).await.unwrap();
-    let numbers = db.get_all_comic_numbers().await.unwrap();
-    assert_eq!(numbers, vec![10, 30, 50]);
+    assert_eq!(db.get_max_comic_number().await.unwrap(), 100);
   }
 
   #[tokio::test]
@@ -246,7 +359,8 @@ mod tests {
     old.updated_at = "2020-01-01T00:00:00Z".to_string();
     db.insert_comic(old).await.unwrap();
     db.insert_comic(make_comic(2)).await.unwrap();
-    let old_comics = db.get_comics_needing_update(30).await.unwrap();
+    let cutoff = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let old_comics = db.get_comics_needing_update(cutoff).await.unwrap();
     assert_eq!(old_comics.len(), 1);
     assert_eq!(old_comics[0].comic_number, 1);
   }
@@ -257,14 +371,14 @@ mod tests {
     for i in 1..=5 {
       db.insert_comic(make_comic(i)).await.unwrap();
     }
-    let batch = db.get_comics_batch(&[2, 4, 1]).await.unwrap();
+    let batch = db.get_comics_batch([2, 4, 1].to_vec()).await.unwrap();
     assert_eq!(batch.len(), 3);
   }
 
   #[tokio::test]
   async fn test_get_comics_batch_empty() {
     let db = setup().await;
-    assert_eq!(db.get_comics_batch(&[]).await.unwrap().len(), 0);
+    assert_eq!(db.get_comics_batch(Vec::new()).await.unwrap().len(), 0);
   }
 
   #[tokio::test]
@@ -272,7 +386,7 @@ mod tests {
     let db = setup().await;
     db.insert_comic(make_comic(1)).await.unwrap();
     db.insert_comic(make_comic(3)).await.unwrap();
-    let batch = db.get_comics_batch(&[1, 2, 3]).await.unwrap();
+    let batch = db.get_comics_batch([1, 2, 3].to_vec()).await.unwrap();
     assert_eq!(batch.len(), 2);
   }
 }

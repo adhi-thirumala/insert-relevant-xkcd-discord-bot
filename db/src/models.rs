@@ -8,6 +8,7 @@ use strum::{Display, EnumString};
 ///
 /// # Example
 /// ```
+/// use db::Comics;
 /// let comics = Comics {
 ///    comic_number: 1,
 ///    title: "Title".to_string(),
@@ -55,8 +56,9 @@ pub enum SectionType {
 ///
 /// # Example
 /// ```
+/// use db::{Chunks, SectionType};
 /// let chunks = Chunks {
-///    id: 1,
+///    id: Some(1),
 ///    comic_number: 1,
 ///    chunk_text: "Chunk Text".to_string(),
 ///    chunk_index: 1,
@@ -81,6 +83,7 @@ pub struct Chunks {
 ///
 /// # Example
 /// ```
+/// use db::Metadata;
 /// let metadata = Metadata {
 ///    key: "key".to_string(),
 ///    value: "value".to_string(),

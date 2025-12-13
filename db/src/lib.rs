@@ -32,6 +32,13 @@ impl Database {
       let conn = db
         .connect()
         .map_err(|e| DatabaseError::Connection(e.to_string()))?;
+
+      // Enable foreign key constraints (must be done per-connection)
+      conn
+        .execute("PRAGMA foreign_keys = ON", ())
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
       let database = Database { conn };
       let initialized: Metadata = database.get_metadata("INITIALIZED").await?;
       if initialized.value == "true" {
@@ -48,4 +55,21 @@ impl Database {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+  use super::*;
+
+  #[tokio::test]
+  async fn test_wal_enabled() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let test_path = temp_dir.path().join("test.db");
+
+    let db = Database::new(&test_path).await.unwrap();
+
+    let mut rows = db.conn.query("PRAGMA journal_mode", ()).await.unwrap();
+    let row = rows.next().await.unwrap().expect("expected row");
+    let mode: String = row.get(0).unwrap();
+
+    assert_eq!(mode, "wal");
+    // temp_dir auto-cleans on drop
+  }
+}

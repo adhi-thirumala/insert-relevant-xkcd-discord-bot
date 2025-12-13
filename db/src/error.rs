@@ -23,7 +23,7 @@ pub enum DatabaseError {
   // ========================================================================
   /// Invalid comic number (must be positive)
   #[error("Invalid comic number: {0}")]
-  InvalidComicNumber(i64),
+  InvalidComicNumber(u64),
 
   /// Invalid embedding dimension
   #[error("Invalid embedding dimension: {0}")]
@@ -31,7 +31,7 @@ pub enum DatabaseError {
 
   /// Invalid chunk index (must be non-negative)
   #[error("Invalid chunk index: {0}")]
-  InvalidChunkIndex(i32),
+  InvalidChunkIndex(u64),
 
   /// Empty or invalid content
   #[error("Invalid content: {0}")]
@@ -42,18 +42,18 @@ pub enum DatabaseError {
   // ========================================================================
   /// Comic not found in database
   #[error("Comic not found: {0}")]
-  ComicNotFound(i64),
+  ComicNotFound(u64),
 
   /// Chunk not found in database
   #[error("Chunk not found: {0}")]
-  ChunkNotFound(i64),
+  ChunkNotFound(u64),
 
   // ========================================================================
   // Conflict Errors
   // ========================================================================
   /// Comic already exists (duplicate primary key)
   #[error("Comic already exists: {0}")]
-  ComicAlreadyExists(i64),
+  ComicAlreadyExists(u64),
 
   /// Constraint violation (e.g., foreign key)
   #[error("Constraint violation: {0}")]
@@ -84,6 +84,9 @@ pub enum DatabaseError {
   #[error("Metadata not found for key {0}")]
   MetadataNotFound(String),
 
+  #[error("Failed to parse metadata value: {0}")]
+  MetaParseFailed(String),
+
   // ========================================================================
   // Serialization Errors
   // ========================================================================
@@ -101,6 +104,9 @@ pub enum DatabaseError {
   /// File system error (can't open database file)
   #[error("File system error: {0}")]
   IoError(#[from] std::io::Error),
+
+  #[error("No Comics Found")]
+  NoComicsFound,
 
   // ========================================================================
   // Underlying Library Errors
